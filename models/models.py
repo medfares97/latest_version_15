@@ -138,36 +138,31 @@ class EbMergeTasks(models.Model):
             """
 
     def show_results(self):
-        current = self
-
-        # Delete existing records from the related model before processing
-        self.env['base.group.merge.line2'].search([('wiz_id', '=', current.id)]).unlink()
-
-        res_cpt = []
-        l = []
-        v = []
-
-        if current.project_id:
+        for current in self:
+            res_cpt = []
+            # Vérification si un projet est sélectionné
+            if not current.project_id:
+                raise exceptions.UserError(_("Vous devez sélectionner un projet!"))
+            # Vérification du type d'opération
             if current.type == '1':
+                # Vérification si des étapes/kits concernés sont sélectionnés
                 if not current.task_ids:
-                    raise models.ValidationError(
-                        _("Action impossible! Vous devez sélectionner les étapes/kits concernées!"))
+                    raise exceptions.UserError(_("Vous devez sélectionner les étapes/kits concernées!"))
+                # Vérification si des Zones et Secteurs sont mentionnés
                 if not current.line_ids:
-                    raise models.ValidationError(_("Action impossible! Vous devez Mentionner les Zones et Secteurs!"))
+                    raise exceptions.UserError(_("Vous devez mentionner les Zones et Secteurs!"))
 
-                # Extract task IDs from the current's task_ids field
-                task_ids = current.task_ids.ids
-
-                # Iterate through the tasks to separate steps with and without kits
-                for tt in task_ids:
-                    this_p = self.env['project.task'].browse(tt)
-
+                l = []
+                v = []
+                # Itération sur les étapes/kits sélectionnés
+                for tt in current.task_ids:
+                    this_p = tt
+                    # Séparation des étapes avec et sans kit
                     if this_p.kit_id:
                         v.append(this_p.kit_id.id)
                     else:
                         l.append(this_p.name)
-
-                # Use new-style queries with the env object
+                    # Recherche des tâches en fonction des critères
                 if len(v) > 0:
                     tasks = self.env['project.task.work'].search([
                         ('project_id', '=', current.project_id.id),
@@ -182,21 +177,18 @@ class EbMergeTasks(models.Model):
                         ('state', 'in', ('draft', 'affect')),
                         ('etape', 'in', l),
                     ])
-
+                    # Vérification des tâches et des relations avant de poursuivre
                 if len(l) > 0:
-                    # Use the browse method instead of directly fetching from the cursor
                     ll1 = self.env['base.task.merge.automatic.wizard.project.task.work.rel'].search([
                         ('base_task_merge_automatic_wizard_id', '=', current.id),
                     ])
-
                     if not ll1:
-                        raise models.ValidationError(_("Action impossible! Merci de sauvegarder le document avant!"))
+                        raise exceptions.UserError(_("Merci de sauvegarder le document avant!"))
                     else:
-                        # Collect the IDs of tasks from the relation
+                        # Collecte des ID des tâches dans la relation
                         res_cpt = [nn.project_task_work_id.id for nn in ll1]
-
-                    # Find the intersection of tasks found and those in the relation
-                    pp = tasks.filtered(lambda task: task.id in res_cpt)
+                        # Intersection entre les tâches trouvées et celles de la relation
+                    pp = set(tasks.ids).intersection(res_cpt)
                 else:
                     res_cpt = tasks.ids
 
